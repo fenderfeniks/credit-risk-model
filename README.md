@@ -198,5 +198,3 @@ It is a compact **production-style ML prototype** for a credit scoring task with
 - clear modular source code,
 - measurable model quality,
 - reusable trained pipeline.
-
-For a **Junior / Junior+ / Middle ML** portfolio, this is a strong project because it shows both modeling skills and understanding of the full ML workflow.
