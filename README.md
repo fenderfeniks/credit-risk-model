@@ -1,5 +1,11 @@
 ﻿# Credit Risk Model
 
+![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python&logoColor=white)
+![LightGBM](https://img.shields.io/badge/LightGBM-boosting-9ACD32)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-pipeline-F7931E?logo=scikit-learn&logoColor=white)
+![ROC-AUC](https://img.shields.io/badge/ROC--AUC-0.7547-brightgreen)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 End-to-end machine learning project for **credit scoring** based on a client's credit history.
 
 The project covers the full ML workflow: data loading, aggregation of event-level credit history, feature engineering, model training, evaluation, and saving the final inference pipeline.
