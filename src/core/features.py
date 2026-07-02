@@ -275,83 +275,94 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
 # ============================================================
 
 class FeatureEngineer(BaseEstimator, TransformerMixin):
-    """
-    Генерация признаков 2-го уровня (без утечек данных).
-    Основано на работе с неординальными бинами: строковые склейки, 
-    индексы типичности и булевы флаги экстремумов.
-    """
     def __init__(self, config=None):
         self.cfg = config or {}
         
-        # Реестр всех потенциальных новых колонок
+        # Реестр всех генерируемых фичей
         self.new_features_ = [
             'overall_typicalness_score',
+            'overall_anomaly_score',
             'is_absolutely_perfect_payer',
+            'is_chronic_defaulter',        # НОВОЕ
             'cat_last_util_and_time',
             'cat_last_type_and_limit',
             'cat_limit_transition',
-            'cat_type_transition'
+            'cat_type_transition',
+            'cat_status_transition',       # НОВОЕ
+            'cat_util_and_history',        # НОВОЕ
+            'cat_diversity_profile'        # НОВОЕ
         ]
 
     def fit(self, X: pd.DataFrame, y=None):
-        # Сохраняем схему входящих колонок
         if hasattr(X, "columns"):
             self.feature_names_in_ = np.array(X.columns, dtype=object)
         return self
 
-    def _safe_concat(self, df: pd.DataFrame, col1: str, col2: str, out_name: str):
-        """Безопасная строковая склейка двух бинированных колонок."""
+    def _safe_concat(self, df: pd.DataFrame, col1: str, col2: str, out_name: str, sep: str = "_"):
+        """Безопасная строковая склейка."""
         if col1 in df.columns and col2 in df.columns:
             c1_str = df[col1].fillna(-999).astype(int).astype(str)
             c2_str = df[col2].fillna(-999).astype(int).astype(str)
-            df[out_name] = c1_str + "_" + c2_str
+            df[out_name] = c1_str + sep + c2_str
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         check_is_fitted(self)        
         X_transformed = X.copy()
 
         # =====================================================================
-        # 1. МАКРО-ИНДЕКСЫ ТИПИЧНОСТИ И АНОМАЛИЙ (Numerical)
+        # 1. МАКРО-ИНДЕКСЫ ТИПИЧНОСТИ И АНОМАЛИЙ
         # =====================================================================
-        # Усредняем все колонки 'share_global_mode'
         global_mode_cols = [c for c in X_transformed.columns if c.endswith('_share_global_mode')]
         if global_mode_cols:
             X_transformed['overall_typicalness_score'] = X_transformed[global_mode_cols].mean(axis=1)
 
-        # Усредняем все колонки 'share_rare_bins' (насколько клиент "странный" в целом)
         rare_bins_cols = [c for c in X_transformed.columns if c.endswith('_share_rare_bins')]
         if rare_bins_cols:
             X_transformed['overall_anomaly_score'] = X_transformed[rare_bins_cols].mean(axis=1)
-            if 'overall_anomaly_score' not in self.new_features_:
-                self.new_features_.append('overall_anomaly_score')
 
         # =====================================================================
-        # 2. ЖЕСТКИЕ ФЛАГИ ЭКСТРЕМУМОВ (Boolean / Int8)
+        # 2. ЖЕСТКИЕ ФЛАГИ ЭКСТРЕМУМОВ
         # =====================================================================
         if 'paym_row_share_code_0_mean' in X_transformed.columns:
-            # Выделяем сегмент "идеальных" плательщиков
             X_transformed['is_absolutely_perfect_payer'] = (
                 X_transformed['paym_row_share_code_0_mean'] >= 0.95
             ).astype(np.int8)
 
-        # =====================================================================
-        # 3. КАТЕГОРИАЛЬНЫЕ КРОСС-ФИЧИ И ЭВОЛЮЦИЯ (Strings -> Categorical)
-        # Все названия начинаются с 'cat_', чтобы их легко было отфильтровать
-        # =====================================================================
-        
-        # А) Склейки "Текущего состояния" (комбинации самых сильных _last фичей)
-        # Утилизация + Давность кредита (например: "14_5")
-        self._safe_concat(X_transformed, 'pre_util_last', 'pre_since_opened_last', 'cat_last_util_and_time')
-        
-        # Тип последнего кредита + Его лимит (например: "Потребительский_Бин15")
-        self._safe_concat(X_transformed, 'enc_loans_credit_type_last', 'pre_loans_credit_limit_last', 'cat_last_type_and_limit')
+        # НОВОЕ: Хронический должник (быстрая отсечка для класса 1)
+        if 'share_any_overdue' in X_transformed.columns and 'share_serious_overdue' in X_transformed.columns:
+            X_transformed['is_chronic_defaulter'] = (
+                (X_transformed['share_any_overdue'] > 0.3) | 
+                (X_transformed['share_serious_overdue'] > 0.0)
+            ).astype(np.int8)
 
-        # Б) Переходы состояний (Transitions - Замена делению/вычитанию)
-        # Эволюция кредитного лимита (с чего начинал -> к чему пришел)
+        # =====================================================================
+        # 3. КАТЕГОРИАЛЬНЫЕ ЭВОЛЮЦИИ И СКЛЕЙКИ
+        # =====================================================================
+        self._safe_concat(X_transformed, 'pre_util_last', 'pre_since_opened_last', 'cat_last_util_and_time')
+        self._safe_concat(X_transformed, 'enc_loans_credit_type_last', 'pre_loans_credit_limit_last', 'cat_last_type_and_limit')
         self._safe_concat(X_transformed, 'pre_loans_credit_limit_first', 'pre_loans_credit_limit_last', 'cat_limit_transition')
-        
-        # Эволюция типа кредита (например, перешел ли с микрозайма на ипотеку)
         self._safe_concat(X_transformed, 'enc_loans_credit_type_first', 'enc_loans_credit_type_last', 'cat_type_transition')
+        
+        # НОВОЕ: Эволюция статуса кредита
+        self._safe_concat(X_transformed, 'first_enc_loans_credit_status', 'last_enc_loans_credit_status', 'cat_status_transition')
+
+        # НОВОЕ: Прошлое (Доля просрочек) + Настоящее (Утилизация)
+        if 'share_any_overdue' in X_transformed.columns and 'pre_util_last' in X_transformed.columns:
+            # Превращаем непрерывную долю просрочек в понятные текстовые бакеты
+            history_bins = pd.cut(
+                X_transformed['share_any_overdue'], 
+                bins=[-np.inf, 0.0, 0.2, np.inf], 
+                labels=["Clean", "Mild", "Frequent"]
+            ).astype(str)
+            
+            util_str = X_transformed['pre_util_last'].fillna(-999).astype(int).astype(str)
+            X_transformed['cat_util_and_history'] = util_str + "_" + history_bins
+
+        # НОВОЕ: Матрица кредитного опыта (Разнообразие типов + Общее число)
+        if 'distinct_enc_loans_credit_type_count' in X_transformed.columns and 'num_credits' in X_transformed.columns:
+            types_str = X_transformed['distinct_enc_loans_credit_type_count'].fillna(0).astype(int).astype(str)
+            loans_str = X_transformed['num_credits'].fillna(0).astype(int).astype(str)
+            X_transformed['cat_diversity_profile'] = types_str + "types_" + loans_str + "loans"
 
         return X_transformed
 
@@ -363,7 +374,6 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         else:
             features = []
 
-        # Добавляем только те фичи, которые были реально созданы в transform
         actual_new_features = [f for f in self.new_features_ if f in self.new_features_]
         for f in actual_new_features:
             if f not in features:

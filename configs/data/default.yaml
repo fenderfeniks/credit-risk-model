@@ -13,8 +13,8 @@ tabular:
   preprocessing_version: "0.0.1"  # Меняем, если изменился метод outlier или стратегии fill_value
   preprocessing_changelog: "Change data types to category"
 
-  features_version: "0.0.1"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
-  features_changelog: "add not linear features"
+  features_version: "0.0.4"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_changelog: "кросс фича, профиль разнообразия, хронический должник"
 
   aggregation_version: "3.0.1"
   aggregation_changelog: "fix data leakege"
