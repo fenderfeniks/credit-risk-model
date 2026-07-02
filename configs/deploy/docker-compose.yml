@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin}
+      POSTGRES_DB: ${DB_NAME:-mlflow_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-admin} -d ${DB_NAME:-mlflow_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ml_network
+
+  mlflow:
+    build:
+      context: ../../
+      dockerfile: docker/mlflow/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${DB_USER:-admin}:${DB_PASSWORD:-admin}@postgres:5432/${DB_NAME:-mlflow_db}
+      --default-artifact-root /mlruns
+      --host 0.0.0.0
+    volumes:
+      - mlruns_data:/mlruns
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ml_network
+
+  # ============================================================
+  # APP СЕРВИСЫ (образы из обновлённого pyproject.toml: core + api / core + train)
+  # ============================================================
+  api:
+    build:
+      context: ../../
+      dockerfile: docker/api/Dockerfile
+    # Явный тег нужен, чтобы DockerOperator в Airflow мог ссылаться
+    # на этот образ по имени, а не полагаться на автогенерируемый.
+    image: sber_autopodpiska-api:latest
+    # Фиксированное имя контейнера — чтобы DAG deploy_model мог
+    # сделать `docker restart sber_api` без лишней логики поиска имени.
+    container_name: sber_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      # Модель и препроцессор кладёт сюда train-контейнер (deploy-шаг),
+      # api их читает на старте (lifespan в src/api/main.py).
+      - models_data:/app/models
+    depends_on:
+      - mlflow
+    networks:
+      - ml_network
+
+  # Train не должен быть постоянно запущенным сервисом — это batch-джоба,
+  # которую дёргает Airflow через DockerOperator. profiles:["build-only"]
+  # не даёт ему стартовать при обычном `docker compose up`, но позволяет
+  # собрать образ командой `docker compose --profile build-only build train`
+  # и держать Dockerfile/образ в одном месте с остальными.
+  train:
+    build:
+      context: ../../
+      dockerfile: docker/train/Dockerfile
+    image: sber_autopodpiska-train:latest
+    profiles: ["build-only"]
+    networks:
+      - ml_network
+
+  # ============================================================
+  # AIRFLOW СЕРВИСЫ
+  # ============================================================
+  airflow-webserver:
+    build:
+      context: ../../
+      dockerfile: docker/airflow/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../dags:/opt/airflow/dags # Оставляем ТОЛЬКО даги
+      - /var/run/docker.sock:/var/run/docker.sock # Пробрасываем сокет хоста
+    environment:
+      - AIRFLOW__WEBSERVER__SECRET_KEY=my_super_secret_key_12345
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql://${DB_USER:-admin}:${DB_PASSWORD:-admin}@postgres:5432/postgres
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__LOGGING_LEVEL=INFO
+    ports:
+      - "8080:8080"
+    command: webserver
+    networks:
+      - ml_network
+
+  airflow-scheduler:
+    build:
+      context: ../../
+      dockerfile: docker/airflow/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../dags:/opt/airflow/dags # Оставляем ТОЛЬКО даги
+      - /var/run/docker.sock:/var/run/docker.sock # Пробрасываем сокет хоста
+      # Видим тот же data/raw, что и хост — нужно file-sensor таске
+      # (check_data_exists), которая ждёт появления new_data.csv.
+      - ${HOST_PROJECT_ROOT:-../..}/data/raw:/opt/airflow/data/raw
+    environment:
+      - AIRFLOW__WEBSERVER__SECRET_KEY=my_super_secret_key_12345
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql://${DB_USER:-admin}:${DB_PASSWORD:-admin}@postgres:5432/postgres
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      # HOST_PROJECT_ROOT нужен DAG'ам, чтобы DockerOperator мог пробросить
+      # тот же data/raw в порождаемые им контейнеры (bind mount требует
+      # абсолютный путь на хосте, а не путь внутри airflow-контейнера).
+      - HOST_PROJECT_ROOT=${HOST_PROJECT_ROOT:-}
+      # Передаем переменные для DAG, чтобы DockerOperator мог их подхватить
+      # Если они заданы в .env на хосте, compose подставит их сюда. Иначе — дефолты.
+      - DB_USER=${DB_USER:-admin}
+      - DB_PASSWORD=${DB_PASSWORD:-admin}
+      - DB_NAME=${DB_NAME:-mlflow_db}
+      
+      - HOST_DB_USER=${HOST_DB_USER}
+      - HOST_DB_PASSWORD=${HOST_DB_PASSWORD}
+      - HOST_DB_NAME=${HOST_DB_NAME}
+    command: scheduler
+    networks:
+      - ml_network
+
+  airflow-init:
+    build:
+      context: ../../
+      dockerfile: docker/airflow/Dockerfile
+    environment:
+      - AIRFLOW__WEBSERVER__SECRET_KEY=my_super_secret_key_12345
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql://${DB_USER:-admin}:${DB_PASSWORD:-admin}@postgres:5432/postgres
+    # Обернули в bash -c, чтобы отработал оператор &&
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Maxim --lastname Novikov --role Admin --email mallienotxc@gmail.com"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ml_network
+
+networks:
+  ml_network:
+    driver: bridge
+
+volumes:
+  pg_data:
+  mlruns_data:
+  # Общие артефакты модели: train (через DockerOperator) пишет сюда веса
+  # и feature_schema, api читает их на старте через lifespan.
+  models_data:

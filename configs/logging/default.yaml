@@ -1,0 +1,34 @@
+# configs/logging/default.yaml
+
+# ============================================================
+# SYSTEM LOGS
+# ============================================================
+level: "INFO"
+log_file: "${paths.logs_dir}/pipeline.log"
+
+# ============================================================
+# MLFLOW
+# ============================================================
+mlflow:
+  tracking_uri: "sqlite:///logs/mlflow.db"
+  artifact_uri_rel: "logs/mlruns"
+  experiment_name: "credit-risk-model"
+  experiments:
+    eda: "EDA"
+    preprocessing: "Preprocessing"
+    features: "Features"
+    train: "Training"
+    tune: "Tuning"
+
+# ============================================================
+# PLOTS (Настройки для EDA в ноутбуках)
+# ============================================================
+plots:
+  fig_size: [12, 6]
+  dpi: 100
+  font_size: 12
+  style: "seaborn-v0_8-whitegrid"
+  grid: true
+  alpha: 0.3
+  spines_top: false
+  spines_right: false

@@ -1,0 +1,31 @@
+name: "catboost"
+model_version: "0.0.0"
+model_changelog: "default model"
+
+params:
+  iterations: 1000
+  eval_metric: "AUC"
+  auto_class_weights: 'Balanced'
+
+
+# Передаем не просто границы, а конфигурацию для suggest методы
+optuna_search_space:
+  depth: 
+    type: "int"
+    bounds: [4, 8] # Сузили до 8, так как 10 для таблиц часто избыточно и долго учится
+  learning_rate: 
+    type: "float"
+    bounds: [0.01, 0.15]
+    log: false
+  l2_leaf_reg: 
+    type: "float"
+    bounds: [1.0, 10.0]
+    log: false
+  random_strength: # Исправлена опечатка в имени параметра!
+    type: "float"
+    bounds: [0.001, 2.0]
+    log: true
+  scale_pos_weight: # Добавляем веса классов прямо в общий пул тюнинга разом!
+    type: "float"
+    bounds: [40.0, 100.0]
+    log: false

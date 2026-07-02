@@ -1,0 +1,14 @@
+# configs/model/lightgbm.yaml
+name: "lightgbm"
+model_version: "0.0.0"
+model_changelog: "Стартовый бейзлайн: дефолтные параметры, включен auto_class_weights для борьбы с дисбалансом"
+params:
+  n_estimators: 1000
+  learning_rate: 0.05
+  max_depth: 6
+  num_leaves: 31
+optuna_search_space:
+  iterations: [100, 1000]
+  depth: [4, 10]
+  learning_rate: [0.001, 0.1]
+  l2_leaf_reg: [1, 10]

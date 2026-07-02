@@ -1,0 +1,36 @@
+# configs/config.yaml
+defaults:
+  - base_config
+  - paths: paths
+  - data: default
+  - security: security
+  - model: catboost
+  - training: default
+  - logging: default
+  - env@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
+  - _self_
+
+# ============================================================
+# PROJECT — глобальные настройки
+# ============================================================
+project_name: "credit-risk-model"
+task_type: "binary"       # binary | multiclass | regression
+
+# Метрики и loss_function должны соответствовать task_type:
+# binary:      metrics: [AUC, F1, Accuracy],     loss_function: Logloss
+# multiclass:  metrics: [Accuracy, F1_macro],    loss_function: MultiClass
+# regression:  metrics: [RMSE, MAE, R2],         loss_function: RMSE
+
+metrics: ["AUC", "F1", "Accuracy"]
+loss_function: "Logloss"
+run_name: "p_v${data.tabular.preprocessing_version}__f_v${data.tabular.features_version}__m_v${model.model_version}"
+mode: "train"               # "train", "inference", "eval", "eda"
+seed: 42
+
+# ============================================================
+# DVC — настройки версионирования (Раскомментировать при нужде)
+# ============================================================
+dvc:
+  remote: "local_storage"
+  # s3_bucket: "my-s3-bucket"
+  # endpoint_url: "https://storage.yandexcloud.net"

@@ -1,0 +1,53 @@
+# ============================================================
+# DATA SPLITS — разбиение данных
+# ============================================================
+test_size: 0.2
+val_size: 0.1
+sample_pct: 0.2
+
+# ============================================================
+# TABULAR FEATURES & PREPROCESSING (Для классического ML)
+# ============================================================
+tabular:
+  # --- ВЕРСИОНИРОВАНИЕ ДАННЫХ И ФИЧЕЙ ---
+  preprocessing_version: "0.0.1"  # Меняем, если изменился метод outlier или стратегии fill_value
+  preprocessing_changelog: "Change data types to category"
+
+  features_version: "0.0.1"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_changelog: "add not linear features"
+
+  aggregation_version: "3.0.1"
+  aggregation_changelog: "fix data leakege"
+
+  target_col: "flag"
+  id_col: "id"
+  drop_cols: ["id", "rn"]
+  num_fill_strategy: "median"
+  cat_fill_strategy: "Unknown"
+  outlier_method: "iqr"
+  outlier_threshold: 1.5
+  skip_imputation_cols: []
+  top_n_categories: 20
+
+  # --- SMART DROPPING ---
+  max_missing_pct: 0.90
+  max_constant_pct: 0.999
+  max_row_missing_pct: 0.5
+
+  max_cardinality_for_categorical: 100
+
+  exact_excludes:
+    - "id"
+    - "rn"
+    - "pclose_flag"
+    - "fclose_flag"
+  prefix_excludes:
+    - "is_zero_"
+
+  aggregation_stats_cat_cols:
+    [
+            'pre_util', 'pre_loans_credit_limit', 'pre_since_opened',
+            'pre_loans_outstanding', 'pre_loans_credit_cost_rate', 
+            'enc_loans_credit_type', 'pre_loans90', 'pre_since_confirmed',
+            'pre_loans3060', 'pre_loans530'
+    ]

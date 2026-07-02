@@ -1,0 +1,28 @@
+# configs/paths.yaml
+
+data_dir: "data"
+models_dir: "models"
+reports_dir: "reports"
+logs_dir: "logs"
+src_dir: "src"
+sql_dir: "sql"
+
+raw_dir: "${paths.data_dir}/raw"
+processed_dir: "${paths.data_dir}/processed"
+features_dir: "${paths.data_dir}/features"
+sql_aggregate_dir: "${paths.sql_dir}/aggregate"
+
+data_file_name: "data.csv"  #placeholder
+
+
+# --- Сырые файлы для первоначальной загрузки ---
+dev_data_file: "train_data_0.pq"
+prod_data_file_globbing: "train_data_*.pq"
+target_file_name: "train_target.csv"
+
+# --- sql requests
+aggregate_sql_request: "aggregate_credit_history_v_2_0.sql"
+sql_col_stats_file: "collect_feature_stats.sql"
+#dirty_baseline.sql
+#aggregate_credit_history.sql
+#aggregate_credit_history_v_2_0.sql

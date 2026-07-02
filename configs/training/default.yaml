@@ -1,0 +1,38 @@
+# ============================================================
+# HARDWARE & COMPUTE — настройки ресурсов
+# ============================================================
+device: "auto"              # "cuda", "cpu", "mps"
+num_workers: 4              # Для PyTorch DataLoader
+pin_memory: true
+
+# ============================================================
+# CLASSIC ML (CV и Optuna)
+# ============================================================
+ml:
+  early_stopping_rounds: 100
+  verbose: 50
+
+# ============================================================
+# DEEP LEARNING (Для PyTorch / Transformers)
+# ============================================================
+dl:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 3e-5
+  weight_decay: 0.01
+  gradient_accumulation_steps: 1
+  max_grad_norm: 1.0
+  early_stopping_patience: 3
+  momentum: 0.9
+
+  optimizer: "AdamW"
+  scheduler: "cosine"       # "linear", "cosine", "constant"
+
+# ============================================================
+# OPTUNA TUNING
+# ============================================================
+
+optuna:
+  n_trials: 100
+  direction: "maximize"
+  sampler: "tpe"
