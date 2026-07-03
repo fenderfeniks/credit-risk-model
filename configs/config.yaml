@@ -4,10 +4,10 @@ defaults:
   - paths: paths
   - data: default
   - security: security
-  - model: lightgbm #xgboost, catboost, lightgbm, pytorch
+  - model: catboost #xgboost, catboost, lightgbm, pytorch
   - training: default
   - logging: default
-  - env@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
+  - env@_global_: prod  # Подгружаем dev.yaml и мержим его ключи в корень
   - _self_
 
 # ============================================================

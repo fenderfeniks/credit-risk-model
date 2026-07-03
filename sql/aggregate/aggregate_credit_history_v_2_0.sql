@@ -1,11 +1,9 @@
 -- ============================================================================
--- АГРЕГАЦИЯ КРЕДИТНОЙ ИСТОРИИ (v2.0)
+-- АГРЕГАЦИЯ КРЕДИТНОЙ ИСТОРИИ (v2.0 - БЕЗ УТЕЧКИ ДАННЫХ)
 -- Диалект: DuckDB
 -- Изменения: 
---  1. Убраны нулевые фичи (enc_loans_account_cur, pre_loans6090_first/last и др.)
---  2. Добавлены внутристрочные агрегаты для платежей (enc_paym_*)
---  3. Добавлены фичи share_global_mode и share_rare_bins (частота < 0.05)
---  4. Добавлены соотношения просрочек (serious vs mild)
+--  1. Полностью удален расчет глобальных статистик внутри SQL (убрана утечка).
+--  2. Моды и редкие бины подставляются извне по аналогии с PySpark-версией.
 -- ============================================================================
 
 WITH raw_features AS (
@@ -34,7 +32,7 @@ base_features AS (
 ),
 
 -- ============================================================================
--- БЛОК 2 И 3: ПРОСРОЧКИ И УТИЛИЗАЦИЯ (счетчики + серьезные нарушения)
+-- БЛОК 2 И 3: ПРОСРОЧКИ И УТИЛИЗАЦИЯ
 -- ============================================================================
 overdue_util_agg AS (
     SELECT
@@ -82,7 +80,6 @@ overdue_util_agg AS (
 
 -- ============================================================================
 -- БЛОК 5: ПЛАТЕЖИ (Внутристрочная логика)
--- Разворачиваем, считаем статистики внутри ОДНОГО кредита (rn), затем агрегируем
 -- ============================================================================
 paym_long AS (
     SELECT {id_col}, rn,
@@ -94,7 +91,6 @@ paym_long AS (
         INTO NAME month_col VALUE paym_status
     )
 ),
--- ДОБАВЛЕННЫЙ CTE: Сначала считаем оконную функцию LAG отдельно
 paym_lagged AS (
     SELECT 
         {id_col}, rn, paym_month, paym_status,
@@ -102,7 +98,6 @@ paym_lagged AS (
     FROM paym_long
     WHERE paym_status IS NOT NULL
 ),
--- ИСПРАВЛЕННЫЙ CTE: Теперь агрегируем уже посчитанную колонку prev_paym_status
 paym_row_stats AS (
     SELECT
         {id_col},
@@ -136,84 +131,61 @@ paym_agg AS (
 ),
 
 -- ============================================================================
--- БЛОКИ 4 И 6: КАТЕГОРИАЛЬНЫЕ ПРИЗНАКИ (Global Mode, Rare Bins, Changes)
+-- БЛОКИ 4 И 6: КАТЕГОРИАЛЬНЫЕ ПРИЗНАКИ (Внешние инъекции констант)
 -- ============================================================================
-global_modes AS (
-    SELECT
-        MODE(pre_since_opened) AS m_pre_since_opened,
-        MODE(pre_since_confirmed) AS m_pre_since_confirmed,
-        MODE(pre_loans_credit_limit) AS m_pre_loans_credit_limit,
-        MODE(pre_loans_next_pay_summ) AS m_pre_loans_next_pay_summ,
-        MODE(pre_loans_outstanding) AS m_pre_loans_outstanding,
-        MODE(pre_loans_max_overdue_sum) AS m_pre_loans_max_overdue_sum,
-        MODE(pre_loans_credit_cost_rate) AS m_pre_loans_credit_cost_rate,
-        MODE(pre_util) AS m_pre_util,
-        MODE(pre_over2limit) AS m_pre_over2limit,
-        MODE(pre_maxover2limit) AS m_pre_maxover2limit,
-        MODE(pre_loans5) AS m_pre_loans5,
-        MODE(pre_loans530) AS m_pre_loans530,
-        MODE(pre_loans3060) AS m_pre_loans3060,
-        MODE(pre_loans90) AS m_pre_loans90,
-        MODE(enc_loans_account_holder_type) AS m_enc_loans_account_holder_type,
-        MODE(enc_loans_credit_status) AS m_enc_loans_credit_status,
-        MODE(enc_loans_credit_type) AS m_enc_loans_credit_type,
-        (SELECT COUNT(*) FROM raw_features) AS total_rows
-    FROM raw_features
-),
 cat_features_prep AS (
     SELECT
         r.{id_col}, r.rn,
         
-        -- Макрос для каждой колонки: сырое значение, флаг смены, флаг моды, флаг редкого бина (<5%)
+        -- Названия плейсхолдеров m_ и rare_ полностью совпадают со Spark-версией
         r.pre_since_opened,
         (r.pre_since_opened != LAG(r.pre_since_opened) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_since_opened_chg,
-        (r.pre_since_opened = gm.m_pre_since_opened)::INT AS pre_since_opened_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_since_opened) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_since_opened_is_rare,
+        (r.pre_since_opened = {m_pre_since_opened})::INT AS pre_since_opened_is_mode,
+        (r.pre_since_opened IN ({rare_pre_since_opened}))::INT AS pre_since_opened_is_rare,
 
         r.pre_since_confirmed,
         (r.pre_since_confirmed != LAG(r.pre_since_confirmed) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_since_confirmed_chg,
-        (r.pre_since_confirmed = gm.m_pre_since_confirmed)::INT AS pre_since_confirmed_is_mode,
+        (r.pre_since_confirmed = {m_pre_since_confirmed})::INT AS pre_since_confirmed_is_mode,
 
         r.pre_loans_credit_limit,
         (r.pre_loans_credit_limit != LAG(r.pre_loans_credit_limit) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans_credit_limit_chg,
-        (r.pre_loans_credit_limit = gm.m_pre_loans_credit_limit)::INT AS pre_loans_credit_limit_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_loans_credit_limit) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_loans_credit_limit_is_rare,
+        (r.pre_loans_credit_limit = {m_pre_loans_credit_limit})::INT AS pre_loans_credit_limit_is_mode,
+        (r.pre_loans_credit_limit IN ({rare_pre_loans_credit_limit}))::INT AS pre_loans_credit_limit_is_rare,
 
         r.pre_loans_outstanding,
         (r.pre_loans_outstanding != LAG(r.pre_loans_outstanding) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans_outstanding_chg,
-        (r.pre_loans_outstanding = gm.m_pre_loans_outstanding)::INT AS pre_loans_outstanding_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_loans_outstanding) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_loans_outstanding_is_rare,
+        (r.pre_loans_outstanding = {m_pre_loans_outstanding})::INT AS pre_loans_outstanding_is_mode,
+        (r.pre_loans_outstanding IN ({rare_pre_loans_outstanding}))::INT AS pre_loans_outstanding_is_rare,
 
         r.pre_loans_credit_cost_rate,
         (r.pre_loans_credit_cost_rate != LAG(r.pre_loans_credit_cost_rate) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans_credit_cost_rate_chg,
-        (r.pre_loans_credit_cost_rate = gm.m_pre_loans_credit_cost_rate)::INT AS pre_loans_credit_cost_rate_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_loans_credit_cost_rate) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_loans_credit_cost_rate_is_rare,
+        (r.pre_loans_credit_cost_rate = {m_pre_loans_credit_cost_rate})::INT AS pre_loans_credit_cost_rate_is_mode,
+        (r.pre_loans_credit_cost_rate IN ({rare_pre_loans_credit_cost_rate}))::INT AS pre_loans_credit_cost_rate_is_rare,
 
         r.pre_util,
         (r.pre_util != LAG(r.pre_util) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_util_chg,
-        (r.pre_util = gm.m_pre_util)::INT AS pre_util_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_util) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_util_is_rare,
+        (r.pre_util = {m_pre_util})::INT AS pre_util_is_mode,
+        (r.pre_util IN ({rare_pre_util}))::INT AS pre_util_is_rare,
 
         r.pre_loans530,
         (r.pre_loans530 != LAG(r.pre_loans530) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans530_chg,
-        (r.pre_loans530 = gm.m_pre_loans530)::INT AS pre_loans530_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.pre_loans530) * 1.0 / gm.total_rows) < 0.05)::INT AS pre_loans530_is_rare,
+        (r.pre_loans530 = {m_pre_loans530})::INT AS pre_loans530_is_mode,
+        (r.pre_loans530 IN ({rare_pre_loans530}))::INT AS pre_loans530_is_rare,
 
         r.pre_loans3060,
         (r.pre_loans3060 != LAG(r.pre_loans3060) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans3060_chg,
-        (r.pre_loans3060 = gm.m_pre_loans3060)::INT AS pre_loans3060_is_mode,
+        (r.pre_loans3060 = {m_pre_loans3060})::INT AS pre_loans3060_is_mode,
 
         r.pre_loans90,
         (r.pre_loans90 != LAG(r.pre_loans90) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS pre_loans90_chg,
-        (r.pre_loans90 = gm.m_pre_loans90)::INT AS pre_loans90_is_mode,
+        (r.pre_loans90 = {m_pre_loans90})::INT AS pre_loans90_is_mode,
 
         r.enc_loans_credit_type,
         (r.enc_loans_credit_type != LAG(r.enc_loans_credit_type) OVER(PARTITION BY r.{id_col} ORDER BY r.rn))::INT AS enc_loans_credit_type_chg,
-        (r.enc_loans_credit_type = gm.m_enc_loans_credit_type)::INT AS enc_loans_credit_type_is_mode,
-        ((COUNT(*) OVER(PARTITION BY r.enc_loans_credit_type) * 1.0 / gm.total_rows) < 0.05)::INT AS enc_loans_credit_type_is_rare
+        (r.enc_loans_credit_type = {m_enc_loans_credit_type})::INT AS enc_loans_credit_type_is_mode,
+        (r.enc_loans_credit_type IN ({rare_enc_loans_credit_type}))::INT AS enc_loans_credit_type_is_rare
 
     FROM raw_features r
-    CROSS JOIN global_modes gm
 ),
 cat_features_agg AS (
     SELECT
@@ -227,7 +199,7 @@ cat_features_agg AS (
         AVG(pre_since_opened_is_mode) AS pre_since_opened_share_global_mode,
         AVG(pre_since_opened_is_rare) AS pre_since_opened_share_rare_bins,
 
-        -- pre_since_confirmed (исключен share_rare_bins)
+        -- pre_since_confirmed
         COUNT(DISTINCT pre_since_confirmed) AS pre_since_confirmed_nunique,
         FIRST(pre_since_confirmed ORDER BY rn ASC) AS pre_since_confirmed_first,
         FIRST(pre_since_confirmed ORDER BY rn DESC) AS pre_since_confirmed_last,
@@ -263,12 +235,12 @@ cat_features_agg AS (
         COUNT(DISTINCT pre_loans530) AS pre_loans530_nunique,
         MAX(pre_loans530_chg) AS pre_loans530_changed_ever,
 
-        -- pre_loans3060 (исключен first по логике питона)
+        -- pre_loans3060
         COUNT(DISTINCT pre_loans3060) AS pre_loans3060_nunique,
         FIRST(pre_loans3060 ORDER BY rn DESC) AS pre_loans3060_last,
         MAX(pre_loans3060_chg) AS pre_loans3060_changed_ever,
 
-        -- pre_loans90 (оставлен только нужный минимум)
+        -- pre_loans90
         COUNT(DISTINCT pre_loans90) AS pre_loans90_nunique,
         AVG(pre_loans90_is_mode) AS pre_loans90_share_global_mode,
 

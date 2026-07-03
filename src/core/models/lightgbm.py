@@ -153,11 +153,21 @@ class LightGBMWrapper(BaseModelWrapper):
         raise NotImplementedError("predict_proba доступен только для задач классификации.")
 
     def save(self) -> str:
-        """Сохранение Scikit-Learn интерфейса LightGBM через joblib."""
+        """Сохранение Scikit-Learn интерфейса LightGBM через joblib.
+
+        ВАЖНО: сохраняем не только self.model, но и cat_columns_/cat_categories_ —
+        без них _prepare_categorical() не сможет корректно привести колонки к
+        тем же category-типам, что были на train, после load() в новой сессии.
+        """
         save_path = self.get_artifact_path(self.models_dir, self.model_version)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        joblib.dump(self.model, save_path)
+        payload = {
+            "model": self.model,
+            "cat_columns_": self.cat_columns_,
+            "cat_categories_": self.cat_categories_,
+        }
+        joblib.dump(payload, save_path)
         logger.info(f"Интерфейс LightGBM сохранен в {save_path}")
 
         return str(save_path)
@@ -166,8 +176,24 @@ class LightGBMWrapper(BaseModelWrapper):
         if not Path(load_path).exists():
             raise FileNotFoundError(f"Файл модели LightGBM не найден: {load_path}")
 
-        self.model = joblib.load(load_path)
+        loaded = joblib.load(load_path)
+
+        # Обратная совместимость: старые артефакты, сохраненные до этого фикса,
+        # содержат просто объект модели, а не dict с метаданными.
+        if isinstance(loaded, dict) and "model" in loaded:
+            self.model = loaded["model"]
+            self.cat_columns_ = loaded.get("cat_columns_")
+            self.cat_categories_ = loaded.get("cat_categories_", {})
+        else:
+            self.model = loaded
+            logger.warning(
+                "Загружен артефакт старого формата без cat_columns_/cat_categories_. "
+                "predict() упадет на _prepare_categorical() — модель нужно переобучить и "
+                "пересохранить через новую версию save()."
+            )
+
         logger.info(f"Модель LightGBM успешно загружена из {load_path}")
+
 
     @property
     def file_extension(self) -> str:

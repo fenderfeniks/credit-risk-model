@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -147,20 +148,54 @@ class XGBoostWrapper(BaseModelWrapper):
         raise NotImplementedError("predict_proba доступен только для задач классификации.")
 
     def save(self) -> str:
-        """Нативное сохранение XGBoost в универсальный формат UBJSON."""
+        """Нативное сохранение XGBoost в универсальный формат UBJSON.
+
+        ВАЖНО: нативный формат XGBoost хранит только саму модель. Метаданные
+        cat_columns_/cat_categories_, нужные _prepare_categorical() при инференсе,
+        сохраняем отдельным .meta.json файлом рядом с моделью — иначе после load()
+        в новой сессии predict() будет падать с RuntimeError
+        ("категориальные колонки неизвестны"), т.к. wrapper не хранит их нигде,
+        кроме памяти текущего процесса.
+        """
         save_path = self.get_artifact_path(self.models_dir, self.model_version)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.model.save_model(str(save_path))
+
+        meta_path = save_path.with_suffix(save_path.suffix + ".meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "cat_columns_": self.cat_columns_,
+                "cat_categories_": self.cat_categories_,
+            }, f, ensure_ascii=False, indent=2)
+
         logger.info(f"Модель XGBoost нативно сохранена в {save_path}")
+        logger.info(f"Метаданные категориальных колонок сохранены в {meta_path}")
 
         return str(save_path)
 
     def load(self, load_path: str) -> None:
-        if not Path(load_path).exists():
+        load_path = Path(load_path)
+        if not load_path.exists():
             raise FileNotFoundError(f"Файл модели XGBoost не найден: {load_path}")
 
         self.model.load_model(str(load_path))
+
+        # Метаданные подхватываются автоматически по соглашению об именовании
+        # (<model_path>.meta.json), явно вызывать ничего дополнительно не нужно.
+        meta_path = load_path.with_suffix(load_path.suffix + ".meta.json")
+        if meta_path.exists():
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            self.cat_columns_ = meta.get("cat_columns_")
+            self.cat_categories_ = meta.get("cat_categories_", {})
+        else:
+            logger.warning(
+                f"Файл метаданных {meta_path} не найден. "
+                "predict() упадет на _prepare_categorical() — модель нужно переобучить "
+                "и пересохранить через новую версию save()."
+            )
+
         logger.info(f"Модель XGBoost успешно загружена из {load_path}")
 
     @property

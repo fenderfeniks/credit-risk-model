@@ -13,7 +13,7 @@ from src.core.pipeline import MLPipeline
 from src.core.utils import PROJECT_ROOT
 from src.core.metrics import calculate_metrics
 from src.core.utils import register_config_schema
-from src.core.stats import GlobalStatCompiler, get_train_ids_fast
+from src.core.stats import GlobalStatCompiler, get_train_ids_fast, resolve_features_source
 
 load_dotenv()
 
@@ -57,7 +57,10 @@ def main(cfg: DictConfig):
     # inference его не использует — не тянем mlflow-зависимость в этом режиме
     # и не плодим experiment runs на простом батч-предсказании.
     stats_compiler = GlobalStatCompiler(cfg, PROJECT_ROOT)
-    features_source = f"read_parquet('{(PROJECT_ROOT / cfg.paths.raw_dir / cfg.paths.dev_data_file).as_posix()}')"
+
+    features_source = resolve_features_source(cfg, PROJECT_ROOT)
+    # ------------------------------------------
+
     loader = get_data_source(cfg=cfg, project_root=PROJECT_ROOT)
 
     tracker = None
@@ -83,7 +86,7 @@ def main(cfg: DictConfig):
         local_artifact_repo = (PROJECT_ROOT / cfg.paths.logs_dir / "mlruns").as_uri()
         tracker.set_experiment(experiment_name, artifact_location=local_artifact_repo)
 
-    elif mode == 'Inference':
+    elif mode == 'inference':
         # В инференсе просто читаем готовое с диска
         stats_compiler.load()
         sql_injections = stats_compiler.get_sql_format_kwargs()
@@ -123,7 +126,7 @@ def main(cfg: DictConfig):
 
         with tracker.start_run(run_name=f"{cfg.run_name}_optuna"):
             tuner = OptunaTuner(cfg, tracker=tracker, project_root=PROJECT_ROOT)
-            best_params = tuner.tune(X_train, y_train, X_val, y_val, tracker=tracker)
+            best_params = tuner.tune(X_train, y_train, X_val, y_val)
 
             logger.info(f"Тюнинг завершен. Лучшие параметры найдены: {best_params}")
             logger.info("Обучение финальной модели...")

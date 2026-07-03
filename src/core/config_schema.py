@@ -186,6 +186,7 @@ class AppConfig:
     seed: int
     loss_function: str
     metrics: List[str]
+    env: str
 
     paths: PathsConfig
     data: DataConfig

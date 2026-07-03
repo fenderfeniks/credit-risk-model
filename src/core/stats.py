@@ -87,23 +87,50 @@ class GlobalStatCompiler:
     
 
 def get_train_ids_fast(cfg, project_root):
-    """Сверхбыстрое получение уникальных ID из сырых паркетов."""
-    features_glob = (project_root / cfg.paths.raw_dir / cfg.paths.dev_data_file).as_posix()
+    """
+    Сверхбыстрое получение уникальных ID из сырых паркетов.
+    Поддерживает как DEV (один файл), так и PROD (glob-паттерн).
+    """
+    features_source = resolve_features_source(cfg, project_root)
     target_path = (project_root / cfg.paths.raw_dir / cfg.paths.target_file_name).as_posix()
+
     id_col = cfg.data.tabular.get('id_col', 'id')
     target_col = cfg.data.tabular.get('target_col', 'target')
-    
-    # Легкий запрос: берем только нужные две колонки, без агрегации фичей
+
     query = f"""
         SELECT f.{id_col}, LAST(t.{target_col}) as {target_col}
-        FROM read_parquet('{features_glob}') f
+        FROM {features_source} f
         LEFT JOIN read_csv_auto('{target_path}') t ON f.{id_col} = t.{id_col}
         GROUP BY f.{id_col}
     """
     df_ids_targets = duckdb.query(query).to_df()
-    
-    # Передаем этот легкий датафрейм в ВАШ сплиттер (из splitting.py)
-    # Он поделит данные на основе таргета и вернет train_df
     train_df, _, _ = split_data(cfg, df_ids_targets)
-    
+
     return set(train_df[id_col])
+
+
+def resolve_features_source(cfg, project_root) -> str:
+    """
+    Возвращает DuckDB-выражение read_parquet(...) с путём/glob-паттерном,
+    в зависимости от режима dev/prod.
+    """
+    mode = cfg.get("env", "dev").lower()
+    if mode == "prod":
+        features_target = cfg.paths.prod_data_file_globbing
+    else:
+        features_target = cfg.paths.dev_data_file
+
+    features_path = (project_root / cfg.paths.raw_dir / features_target).as_posix()
+    base_source = f"read_parquet('{features_path}')"
+    
+    # ДОБАВЛЕНО: Детерминированное сэмплирование по ID
+    sample_pct = cfg.data.get("sample_pct", 1.0)
+    if sample_pct < 1.0:
+        id_col = cfg.data.tabular.get('id_col', 'id')
+        # Берем остаток от деления на 10000, чтобы поддерживать дробные sample_pct
+        return (
+            f"(SELECT * FROM {base_source} "
+            f"WHERE ABS(CAST({id_col} AS BIGINT)) % 10000 / 100.0 <= {sample_pct * 100})"
+        )
+        
+    return base_source
