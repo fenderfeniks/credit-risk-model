@@ -13,8 +13,8 @@ tabular:
   preprocessing_version: "0.0.1"  # Меняем, если изменился метод outlier или стратегии fill_value
   preprocessing_changelog: "Change data types to category"
 
-  features_version: "0.0.4"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
-  features_changelog: "кросс фича, профиль разнообразия, хронический должник"
+  features_version: "0.0.5"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_changelog: "улучшил защиту при сортировке данных"
 
   aggregation_version: "3.0.1"
   aggregation_changelog: "fix data leakege"
@@ -43,6 +43,15 @@ tabular:
     - "fclose_flag"
   prefix_excludes:
     - "is_zero_"
+  suffix_excludes:
+  - "_share"
+  - "_share_global_mode"
+  - "_share_rare_bins"
+  - "_ratio"
+  - "_density"
+  - "_mean"
+  - "_count"
+  - "_nunique"
 
   aggregation_stats_cat_cols:
     [

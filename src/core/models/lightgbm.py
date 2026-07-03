@@ -12,7 +12,6 @@ from .base import BaseModelWrapper
 
 # Импортируем специфичные библиотеки внутри методов или через try/except,
 # чтобы код не падал, если в проекте не установлен CatBoost или PyTorch
-
 try:
     import lightgbm as lgb
 
@@ -35,9 +34,44 @@ class LightGBMWrapper(BaseModelWrapper):
 
         self.ml_cfg = self.cfg.training.ml
         full_params = OmegaConf.to_container(self.model_cfg.params, resolve=True)
-        full_params['objective'] = self.cfg.loss_function
+
+        # --- Маппинг objective: конфиг задается в стиле CatBoost (Logloss, RMSE, ...),
+        # LightGBM ждет свои названия (binary, regression, multiclass, ...) ---
+        objective_mapping = {
+            'Logloss': 'binary',
+            'CrossEntropy': 'binary',
+            'RMSE': 'regression',
+            'MAE': 'regression_l1',
+            'MultiClass': 'multiclass',
+            'MultiClassOneVsAll': 'multiclassova'
+        }
+        raw_objective = self.cfg.loss_function
+        # Если название есть в словаре, берем значение для LightGBM. Если нет - оставляем как есть.
+        full_params['objective'] = objective_mapping.get(raw_objective, raw_objective)
+
+        # --- Маппинг metric: имена метрик у LightGBM отличаются от CatBoost/XGBoost ---
+        metric_mapping = {
+            'auc': 'auc',
+            'f1': 'average_precision',   # нативного F1 нет, PR-AUC — лучшая альтернатива на дисбалансе
+            'accuracy': 'binary_error',  # LightGBM измеряет ошибку (1 - Accuracy)
+            'rocauc': 'auc',
+            'roc_auc': 'auc',
+            'logloss': 'binary_logloss',
+            'rmse': 'rmse',
+            'mae': 'mae'
+        }
+
         if self.cfg.metrics:
-            full_params['metric'] = list(self.cfg.metrics)
+            # Переводим ListConfig от Hydra/OmegaConf в обычный список
+            metrics_list = list(self.cfg.metrics)
+            mapped_metrics = []
+
+            for m in metrics_list:
+                m_lower = str(m).lower()
+                # Переводим метрику или оставляем её в нижнем регистре
+                mapped_metrics.append(metric_mapping.get(m_lower, m_lower))
+
+            full_params['metric'] = mapped_metrics
 
         if self.task_type == 'regression':
             self.model = lgb.LGBMRegressor(**full_params)
@@ -48,25 +82,26 @@ class LightGBMWrapper(BaseModelWrapper):
 
         self.cat_columns_ = None
         self.cat_categories_ = {}
+
     def _prepare_categorical(self, X: pd.DataFrame, fit: bool = False) -> pd.DataFrame:
-            X = X.copy()
-            cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+        X = X.copy()
+        cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
 
-            if fit:
-                self.cat_columns_ = cat_cols
-                self.cat_categories_ = {
-                    col: sorted(X[col].astype(str).unique().tolist()) for col in cat_cols
-                }
+        if fit:
+            self.cat_columns_ = cat_cols
+            self.cat_categories_ = {
+                col: sorted(X[col].astype(str).unique().tolist()) for col in cat_cols
+            }
 
-            if self.cat_columns_ is None:
-                raise RuntimeError("Модель ещё не обучена — категориальные колонки неизвестны.")
+        if self.cat_columns_ is None:
+            raise RuntimeError("Модель ещё не обучена — категориальные колонки неизвестны.")
 
-            for col in self.cat_columns_:
-                if col in X.columns:
-                    # Категории, не встречавшиеся на train, станут NaN — LightGBM трактует их как missing
-                    X[col] = pd.Categorical(X[col].astype(str), categories=self.cat_categories_[col])
+        for col in self.cat_columns_:
+            if col in X.columns:
+                # Категории, не встречавшиеся на train, станут NaN — LightGBM трактует их как missing
+                X[col] = pd.Categorical(X[col].astype(str), categories=self.cat_categories_[col])
 
-            return X
+        return X
 
     def fit(self, X_train: pd.DataFrame, y_train: pd.Series,
             X_val: Optional[pd.DataFrame] = None, y_val: Optional[pd.Series] = None,
@@ -96,7 +131,9 @@ class LightGBMWrapper(BaseModelWrapper):
         self.model.fit(
             X_train, y_train,
             eval_set=eval_set,
-            categorical_feature=self.cat_columns_ if self.cat_columns_ else 'auto',
+            # Пустой список категорий тоже валиден для LightGBM ("нет категориальных фичей"),
+            # поэтому явная проверка на None вместо truthy-проверки списка.
+            categorical_feature=self.cat_columns_ if self.cat_columns_ is not None else 'auto',
             callbacks=callbacks
         )
 
@@ -128,6 +165,7 @@ class LightGBMWrapper(BaseModelWrapper):
     def load(self, load_path: str) -> None:
         if not Path(load_path).exists():
             raise FileNotFoundError(f"Файл модели LightGBM не найден: {load_path}")
+
         self.model = joblib.load(load_path)
         logger.info(f"Модель LightGBM успешно загружена из {load_path}")
 
@@ -138,17 +176,17 @@ class LightGBMWrapper(BaseModelWrapper):
     def get_best_val_score(self, metric_name: str) -> float:
         if not hasattr(self.model, 'best_score_') or 'valid_0' not in self.model.best_score_:
             return 0.0
+
         val_scores = self.model.best_score_['valid_0']
         for key, value in val_scores.items():
             if key.lower() == metric_name.lower():
                 return value
+
         logger.warning(f"Метрика '{metric_name}' не найдена в {list(val_scores.keys())}. Берём первую.")
         return next(iter(val_scores.values()), 0.0)
-    
+
     def get_feature_importance(self, X: pd.DataFrame = None) -> pd.DataFrame:
         """Возвращает DataFrame важности признаков для LightGBM."""
-
-        # Проверяем, обучена ли модель
         if hasattr(self.model, 'feature_importances_'):
             importances = self.model.feature_importances_
         else:

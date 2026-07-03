@@ -4,7 +4,7 @@ defaults:
   - paths: paths
   - data: default
   - security: security
-  - model: catboost
+  - model: lightgbm #xgboost, catboost, lightgbm, pytorch
   - training: default
   - logging: default
   - env@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
@@ -22,8 +22,8 @@ task_type: "binary"       # binary | multiclass | regression
 # regression:  metrics: [RMSE, MAE, R2],         loss_function: RMSE
 
 metrics: ["AUC", "F1", "Accuracy"]
-loss_function: "Logloss"
-run_name: "p_v${data.tabular.preprocessing_version}__f_v${data.tabular.features_version}__m_v${model.model_version}"
+loss_function: "Logloss"  # "binary:logistic"  для xgboost для бинарной для остальных "Logloss"
+run_name: "p_v${data.tabular.preprocessing_version}__f_v${data.tabular.features_version}__m_n${model.name}_v${model.model_version}"
 mode: "train"               # "train", "inference", "eval", "eda"
 seed: 42
 

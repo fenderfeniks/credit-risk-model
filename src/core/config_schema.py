@@ -63,6 +63,7 @@ class TabularDataConfig:
     outlier_threshold: float
     exact_excludes: List[str]
     prefix_excludes: List[str]
+    suffix_excludes: List[str]
     aggregation_stats_cat_cols: List[str]
 
     max_cardinality_for_categorical: int = 100

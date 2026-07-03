@@ -34,8 +34,42 @@ class XGBoostWrapper(BaseModelWrapper):
         self.ml_cfg = self.cfg.training.ml
         full_params = OmegaConf.to_container(self.model_cfg.params, resolve=True)
         full_params['objective'] = self.cfg.loss_function
+
+        objective_mapping = {
+            'Logloss': 'binary:logistic',
+            'CrossEntropy': 'binary:logistic',
+            'RMSE': 'reg:squarederror',
+            'MAE': 'reg:absoluteerror',
+            'MultiClass': 'multi:softmax',
+            'MultiClassOneVsAll': 'multi:softprob'
+        }
+        raw_objective = self.cfg.loss_function
+        # Если название есть в словаре, берем значение для XGBoost. Если нет - оставляем как есть.
+        full_params['objective'] = objective_mapping.get(raw_objective, raw_objective)
+
+        metric_mapping = {
+            'auc': 'auc',
+            'f1': 'aucpr',            # Встроенного F1 нет, Precision-Recall AUC — лучшая альтернатива
+            'accuracy': 'error',      # XGBoost измеряет ошибку (1 - Accuracy)
+            'rocauc': 'auc',
+            'roc_auc': 'auc',
+            'logloss': 'logloss',
+            'rmse': 'rmse',
+            'mae': 'mae'
+        }
+
         if self.cfg.metrics:
-            full_params['eval_metric'] = self.cfg.metrics[0] if len(self.cfg.metrics) == 1 else self.cfg.metrics
+            # Переводим ListConfig от Hydra/OmegaConf в обычный список
+            metrics_list = list(self.cfg.metrics)
+            mapped_metrics = []
+            
+            for m in metrics_list:
+                m_lower = str(m).lower()
+                # Переводим метрику или оставляем её в нижнем регистре
+                mapped_metrics.append(metric_mapping.get(m_lower, m_lower))
+                
+            # Передаем строку, если метрика одна, или список, если несколько
+            full_params['eval_metric'] = mapped_metrics[0] if len(mapped_metrics) == 1 else mapped_metrics
 
         if self.ml_cfg.early_stopping_rounds > 0:
             full_params['early_stopping_rounds'] = self.ml_cfg.early_stopping_rounds

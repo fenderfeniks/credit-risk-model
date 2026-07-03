@@ -3,11 +3,9 @@ name: "xgboost"
 model_version: "0.0.0"
 model_changelog: "Стартовый бейзлайн: дефолтные параметры, включен auto_class_weights для борьбы с дисбалансом"
 params:
-  n_estimators: 1000
-  learning_rate: 0.05
-  max_depth: 6
-  subsample: 0.8
-  colsample_bytree: 0.8
+  n_estimators: 2000
+  scale_pos_weight: 31
+
 optuna_search_space:
   iterations: [100, 1000]
   depth: [4, 10]

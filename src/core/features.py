@@ -39,6 +39,11 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
         self.cat_strategy = getattr(self.cfg, 'cat_fill_strategy', 'unknown')
         self.exact_excludes = set(self.cfg.exact_excludes)
         self.prefix_excludes = list(self.cfg.prefix_excludes)
+        # Суффиксы, по которым колонка ВСЕГДА считается числовой, даже если
+        # она попадает под guard по кардинальности (например, доли/счетчики/
+        # отношения вида *_share, *_ratio, *_mean — низкая кардинальность
+        # на малой выборке не делает их бизнес-категориями).
+        self.suffix_excludes = list(getattr(self.cfg, 'suffix_excludes', []))
  
         self.drop_cols = list(self.cfg.drop_cols) if self.cfg.drop_cols else []
         self.skip_imputation = set(getattr(self.cfg, 'skip_imputation_cols', []))
@@ -83,6 +88,7 @@ class TabularPreprocessor(BaseEstimator, TransformerMixin):
             col for col in all_columns
             if col not in all_excludes
             and not any(col.startswith(pref) for pref in self.prefix_excludes)
+            and not any(col.endswith(suf) for suf in self.suffix_excludes)
         ]
  
         # Guard по кардинальности: для колонок, которые ИЗНАЧАЛЬНО числовые

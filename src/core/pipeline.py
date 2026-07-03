@@ -104,31 +104,37 @@ class MLPipeline:
             # 4. Логируем через менеджер артефактов
             if active_tracker:
                 #намеренный внутренний импорт для облегчения API docker image
-                from src.eda.visualisation import error_analyse, search_trends, feature_importance
+                from src.eda.visualisation import ReportBuilder
                 import matplotlib.pyplot as plt
 
                 final_metrics_to_log = {f"final_val_{k}": v for k, v in final_metrics.items()}
                 active_tracker.log_metrics(final_metrics_to_log)
-                
-                reports_dir = self.PROJECT_ROOT / "reports" / self.cfg.run_name
-                reports_dir.mkdir(parents=True, exist_ok=True)
+
+                reporter = ReportBuilder(self.cfg, self.PROJECT_ROOT)
                 # 2. Генерируем и логируем сложные графики анализа ошибок
                 try:
                     logger.info("Отправка продвинутой графической аналитики в MLflow...")
-                    
+
                     # Анализ общей ошибки
-                    fig_err = error_analyse(self.model, error_df, X_val_clean, cfg=self.cfg, project_root=self.PROJECT_ROOT)
+                    fig_err = reporter.error_analyse(self.model, error_df, X_val_clean)
                     active_tracker.log_figure(fig_err, "error_analysis.png", "plots")
                     plt.close(fig_err) # Освобождаем память!
-                    
+
+                    # ROC-AUC кривая (только бинарная классификация, если есть вероятности)
+                    if self.cfg.task_type == 'binary' and y_val_prob is not None:
+                        fig_roc = reporter.roc_auc_curve(y_val, y_val_prob)
+                        if fig_roc:
+                            active_tracker.log_figure(fig_roc, "roc_auc_curve.png", "plots")
+                            plt.close(fig_roc)
+
                     # Тренды ошибок по категориальным признакам
-                    fig_trends = search_trends(error_df, cfg=self.cfg, project_root=self.PROJECT_ROOT)
+                    fig_trends = reporter.search_trends(error_df)
                     if fig_trends: # Если вернулась фигура
                         active_tracker.log_figure(fig_trends, "feature_error_trends.png", "plots")
                         plt.close(fig_trends)
-                        
+
                     # Анализ важности признаков
-                    fi_figs = feature_importance(fi_df, cfg=self.cfg, project_root=self.PROJECT_ROOT)
+                    fi_figs = reporter.feature_importance(fi_df)
                     active_tracker.log_figure(fi_figs['top_importance'], "importance_top.png", "plots")
                     active_tracker.log_figure(fi_figs['worst_importance'], "importance_worst.png", "plots")
                     plt.close(fi_figs['top_importance'])
