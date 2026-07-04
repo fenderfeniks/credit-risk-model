@@ -16,10 +16,10 @@ import pandas as pd
 from pathlib import Path
 from omegaconf import OmegaConf
 import mlflow
-import joblib
 
-from src.core.data import UniversalDataLoader
-from src.core.features import TabularPreprocessor
+import hydra
+from hydra import compose, initialize
+
 from src.core.artifacts import ArtifactManager
 from src.core.pipeline import MLPipeline
 
@@ -27,55 +27,26 @@ TARGET_COL = "is_target_action"
 
 @pytest.fixture(scope="function")
 def mock_config(tmp_path):
-    """Создаёт изолированный конфиг, повторяющий структуру реального проекта."""
-    cfg = OmegaConf.create({
-        "seed": 42,
-        "task_type": "binary",
-        "run_name": "test_run",
-        "data": {
-            "sample_pct": 1.0,
-            "test_size": 0.2,
-            "val_size": 0.2,
-            "tabular": {
-                "target_col": TARGET_COL,
-                "num_fill_strategy": "median",
-                "cat_fill_strategy": "unknown",
-                "max_missing_pct": 0.90,
-                "max_constant_pct": 0.99,
-                "max_row_missing_pct": 0.50,
-                "top_n_categories": 12,
-                "preprocessing_version": "1.0.0",
-                "features_version": "1.0.0",
-                "aggrigation_version": "v1.0.0",
-                "drop_cols": ["explicit_drop"],
-                "skip_imputation_cols": [],
-                "geo": {"cis": ["belarus", "kazakhstan"]},
-                "devices": {"mobile_categories": ["mobile", "tablet"]},
-                "city_markets": {},
-                "defaults_fallback": {
-                    "has_metro": 0, "population_2021": 100000, "avg_salary_2021": 33000, "cars_per_family": 0.65
-                }
-            }
-        },
-        "model": {
-            "name": "mock_model",
-            "model_version": "1.0.0",
-            "params": {"depth": 6}
-        },
-        "paths": {
-            "raw_dir": "data/raw",
-            "processed_dir": "data/processed",
-            "models_dir": "models",
-            "logs_dir": "logs"
-        },
-        "logging": {
-            "mlflow": {
-                "tracking_uri": f"sqlite:///{tmp_path}/mlflow.db",
-                "artifact_uri_rel": "mlruns_artifacts"
-            }
-        }
-    })
-    return cfg
+    """Подгружает реальный конфиг и принудительно патчит его недостающими полями для тестов."""
+    with initialize(version_base=None, config_path="../configs"):
+        cfg = compose(config_name="config")
+        
+        # 1. Принудительно задаем пути в tmp_path, чтобы тесты не писали в реальные папки
+        OmegaConf.update(cfg, "paths.data_dir", str(tmp_path / "data"), force_add=True)
+        OmegaConf.update(cfg, "paths.models_dir", str(tmp_path / "models"), force_add=True)
+        OmegaConf.update(cfg, "paths.reports_dir", str(tmp_path / "reports"), force_add=True)
+        OmegaConf.update(cfg, "paths.logs_dir", str(tmp_path / "logs"), force_add=True)
+        
+        # 2. Патчим недостающие ключи, на которые ругаются тесты
+        if "params" not in cfg.model:
+            OmegaConf.update(cfg, "model.params", {"depth": 6}, force_add=True)
+        if "ml" not in cfg.training:
+            OmegaConf.update(cfg, "training.ml", {"early_stopping_rounds": 10, "verbose": 0}, force_add=True)
+        if "mlflow" not in cfg.logging:
+            OmegaConf.update(cfg, "logging.mlflow", {"experiments": {"train": "t"}}, force_add=True)
+            
+        return cfg
+    
 
 @pytest.fixture(scope="function")
 def sample_data():
@@ -94,6 +65,7 @@ def sample_data():
         "total_hits": rng.integers(1, 50, size=n).astype(float),
         "explicit_drop": ["trash"] * n,
         "constant_col": [42.0] * n,
+        "flag": rng.choice([0, 1], size=n),
         TARGET_COL: rng.choice([0, 1], size=n, p=[0.8, 0.2]),
     })
 
@@ -104,19 +76,32 @@ def sample_data():
     return df
 
 class DummyModel:
-    """Легковесный стаб модели для тестов инференса и пайплайна."""
+    """Легковесный стаб модели, имитирующий BaseModelWrapper для тестов инференса и пайплайна."""
     def __init__(self):
         self.file_extension = ".cbm"
+        
     def fit(self, X, y, X_val=None, y_val=None, tracker=None):
         pass
+        
     def predict(self, X):
         return np.zeros(len(X))
+        
     def predict_proba(self, X):
         return np.hstack([np.ones((len(X), 1)) * 0.8, np.ones((len(X), 1)) * 0.2])
+        
     def save(self):
         return "models/mock_model_v1.0.0.cbm"
+        
     def load(self, path):
         pass
+
+    def get_artifact_path(self, models_dir, version):
+        """Новый метод, необходимый для MLPipeline.load()"""
+        return Path(models_dir) / f"mock_model_v{version}{self.file_extension}"
+
+    def get_feature_importance(self, X):
+        """Новый метод, необходимый для MLPipeline.train() при отрисовке отчетов"""
+        return pd.DataFrame({'Feature': X.columns, 'Importance': [1.0] * len(X.columns)})
 
 @pytest.fixture(scope="function")
 def trained_pipeline(mock_config, sample_data, tmp_path):

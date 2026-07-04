@@ -7,7 +7,7 @@ test_pipeline.py — интеграционные тесты MLPipeline.
 - Выходной тип predict — np.ndarray
 - Размер выходного вектора == размеру входа
 - Цикл save → load → predict даёт идентичные предсказания
-- Препроцессор сохраняется и загружается корректно
+- Препроцессор и схемы сохраняются и загружаются корректно
 - use_tracker=False не пишет в MLflow вне run
 """
 
@@ -23,6 +23,7 @@ from src.core.artifacts import ArtifactManager
 
 @pytest.fixture(autouse=True)
 def mock_get_model_globally():
+    """Подменяет фабрику моделей на заглушку для всего файла."""
     import src.core.pipeline as pipeline_module
     original_get_model = pipeline_module.get_model
     pipeline_module.get_model = lambda cfg, root: DummyModel()
@@ -30,16 +31,30 @@ def mock_get_model_globally():
     pipeline_module.get_model = original_get_model
 
 class DummyModel:
+    """Локальный стаб модели, реализующий интерфейс BaseModelWrapper."""
     def __init__(self):
         self.file_extension = ".cbm"
+        
     def fit(self, X, y, X_val=None, y_val=None, tracker=None):
         pass
+        
     def predict(self, X):
         return np.zeros(len(X))
+        
+    def predict_proba(self, X):
+        return np.hstack([np.ones((len(X), 1)) * 0.8, np.ones((len(X), 1)) * 0.2])
+        
     def save(self):
-        return "mock_model_v1.0.0.cbm"
+        return "models/mock_model_v1.0.0.cbm"
+        
     def load(self, path):
         pass
+
+    def get_artifact_path(self, models_dir, version):
+        return Path(models_dir) / f"mock_model_v{version}{self.file_extension}"
+
+    def get_feature_importance(self, X):
+        return pd.DataFrame({'Feature': X.columns, 'Importance': [1.0] * len(X.columns)})
 
 def _get_splits(sample_data, target):
     train = sample_data.iloc[:160]
@@ -51,6 +66,9 @@ def _get_splits(sample_data, target):
         test.drop(columns=[target]), test[target],
     )
 
+# ---------------------------------------------------------------------------
+# Тест 1: Smoke-тест обучения пайплайна
+# ---------------------------------------------------------------------------
 @pytest.mark.integration
 def test_pipeline_train_runs_without_error(mock_config, sample_data, tmp_path):
     tracker = ArtifactManager(mock_config, tmp_path)
@@ -61,6 +79,9 @@ def test_pipeline_train_runs_without_error(mock_config, sample_data, tmp_path):
     pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=False, use_tracker=False)
     assert pipeline.preprocessor is not None
 
+# ---------------------------------------------------------------------------
+# Тест 2: Защита от предикта до обучения
+# ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_predict_before_train_raises_value_error(mock_config, sample_data, tmp_path):
     tracker = ArtifactManager(mock_config, tmp_path)
@@ -71,6 +92,9 @@ def test_predict_before_train_raises_value_error(mock_config, sample_data, tmp_p
     with pytest.raises(ValueError, match="еще не обучен"):
         pipeline.predict(X)
 
+# ---------------------------------------------------------------------------
+# Тест 3: Формат и размер выхода predict
+# ---------------------------------------------------------------------------
 @pytest.mark.integration
 def test_predict_output_type_and_shape(mock_config, sample_data, trained_pipeline):
     target = mock_config.data.tabular.target_col
@@ -79,17 +103,18 @@ def test_predict_output_type_and_shape(mock_config, sample_data, trained_pipelin
     assert isinstance(preds, np.ndarray)
     assert len(preds) == len(X_test)
 
+# ---------------------------------------------------------------------------
+# Тест 4: Артефакты сохраняются на диск (раздельные версии)
+# ---------------------------------------------------------------------------
 @pytest.mark.integration
 def test_artifacts_are_saved_to_disk(mock_config, sample_data, tmp_path):
     tracker = ArtifactManager(mock_config, tmp_path)
-    # Явно создаем/выставляем тест-эксперимент, чтобы mlflow не ругался на ID=1
     tracker.set_experiment("pipeline_integration_test")
     
     pipeline = MLPipeline(mock_config, tracker, tmp_path)
     target = mock_config.data.tabular.target_col
     X_train, y_train, X_val, y_val, _, _ = _get_splits(sample_data, target)
 
-    # Запускаем в контексте рана, так как save_artifacts внутри дергает tracker.log_dict
     with tracker.start_run(run_name="test_save_artifacts"):
         pipeline.train(X_train, y_train, X_val, y_val, save_artifacts=True, use_tracker=True)
 
@@ -97,12 +122,14 @@ def test_artifacts_are_saved_to_disk(mock_config, sample_data, tmp_path):
     prep_ver = mock_config.data.tabular.preprocessing_version
     feat_ver = mock_config.data.tabular.features_version
 
+    expected_prep_path = models_dir / f"preprocessing_v{prep_ver}.pkl"
+    assert expected_prep_path.exists(), f"Файл не найден по пути: {expected_prep_path}"
+
     assert (models_dir / f"preprocessing_v{prep_ver}.pkl").exists()
     assert (models_dir / f"feature_schema_v{feat_ver}.json").exists()
 
-
 # ---------------------------------------------------------------------------
-# Тест 6: Схема фичей содержит корректный JSON
+# Тест 5: Схема фичей — валидный JSON
 # ---------------------------------------------------------------------------
 @pytest.mark.integration
 def test_feature_schema_is_valid_json(mock_config, sample_data, tmp_path):
@@ -124,9 +151,8 @@ def test_feature_schema_is_valid_json(mock_config, sample_data, tmp_path):
     assert isinstance(schema, dict)
     assert len(schema) > 0
 
-
 # ---------------------------------------------------------------------------
-# Тест 7: Цикл save → load → predict даёт идентичные предсказания
+# Тест 6: Идентичность предсказаний после загрузки (save -> load -> predict)
 # ---------------------------------------------------------------------------
 @pytest.mark.integration
 def test_save_load_predict_is_identical(mock_config, sample_data, tmp_path):
@@ -144,11 +170,17 @@ def test_save_load_predict_is_identical(mock_config, sample_data, tmp_path):
 
     pipeline_loaded = MLPipeline(mock_config, tracker, tmp_path)
     
-    # Симулируем создание файла весов модели, чтобы загрузчик на диске его увидел
+    # Симулируем создание файла весов модели, чтобы загрузчик на диске его увидел.
+    # Используем метод get_artifact_path, чтобы путь 100% совпал с тем, что ищет пайплайн.
+    models_dir = tmp_path / mock_config.paths.models_dir
     model_ver = mock_config.model.model_version
-    model_file = tmp_path / mock_config.paths.models_dir / f"{mock_config.model.name}_v{model_ver}.cbm"
+    
+    dummy_model = DummyModel()
+    model_file = dummy_model.get_artifact_path(models_dir, model_ver)
+    model_file.parent.mkdir(parents=True, exist_ok=True)
     model_file.write_text("mock_weight")
 
     pipeline_loaded.load()
     preds_loaded = pipeline_loaded.predict(X_test)
+    
     np.testing.assert_array_almost_equal(preds_original, preds_loaded, decimal=5)

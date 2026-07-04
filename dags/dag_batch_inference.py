@@ -34,20 +34,18 @@ from airflow.exceptions import AirflowRescheduleException, AirflowTaskTimeout
 from airflow.operators.python import PythonOperator
 from docker.types import Mount
 
-# Внутри airflow-контейнера (см. bind mount в docker-compose.yml)
-AIRFLOW_DATA_PATH = "/opt/airflow/data/raw/new_data.csv"
 
 # HOST_PROJECT_ROOT прокидывается в airflow-scheduler из .env (см. docker-compose.yml).
 # Нужен, потому что DockerOperator монтирует bind-путь С ХОСТА в новый контейнер —
 # путь внутри самого airflow-контейнера (AIRFLOW_DATA_PATH выше) для этого не подходит.
 HOST_PROJECT_ROOT = os.environ.get("HOST_PROJECT_ROOT", "")
 
-API_IMAGE = "sber_autopodpiska-api:latest"
+API_IMAGE = "credit-risk-model-api:latest"
 DOCKER_NETWORK = "deploy_ml_network"  # см. примечание в dag_retrain_pipeline.py
 DOCKER_URL = "unix://var/run/docker.sock"
 
 # Путь внутри inference-контейнера, куда монтируется data/raw с хоста
-DATA_FILE_NAME = "new_data.parquet"
+DATA_FILE_NAME = "train_data_0.pq"
 AIRFLOW_DATA_PATH = f"/opt/airflow/data/raw/{DATA_FILE_NAME}"
 
 
@@ -110,7 +108,7 @@ with DAG(
     dag_id="batch_inference",
     description="Ежедневный батч-инференс на новых данных",
     default_args=default_args,
-    schedule="@daily",
+    schedule=None,
     start_date=pendulum.datetime(2026, 6, 1, tz="UTC"),
     catchup=False,
     tags=["ml", "inference", "production", "docker-operator"],

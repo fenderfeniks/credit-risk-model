@@ -2,7 +2,7 @@
 test_latency.py — тесты производительности инференса.
 
 Покрытие:
-- Медианная латентность одного запроса укладывается в SLA
+- Медианная латентность одного запроса укладывается в SLA (для predict и predict_proba)
 - P95 латентность (хвост распределения) не превышает 2x SLA
 - Латентность батча из N строк масштабируется линейно (не экспоненциально)
 - Повторные вызовы не деградируют (нет утечек памяти / state накопления)
@@ -19,11 +19,16 @@ WARMUP_RUNS = 5                   # прогрев кэшей
 MEASURE_RUNS = 30                 # количество замеров для статистики
 BATCH_SIZES = [1, 10, 50]         # размеры батчей для теста масштабируемости
 
-def _measure_latencies(pipeline, X: pd.DataFrame, n_runs: int) -> np.ndarray:
+def _measure_latencies(pipeline, X: pd.DataFrame, n_runs: int, use_proba: bool = False) -> np.ndarray:
     times = []
     for _ in range(n_runs):
         start = time.perf_counter()
-        pipeline.predict(X)
+        if use_proba:
+            # Имитируем логику инференса вероятностей из main.py
+            X_clean = pipeline.preprocessor.transform(X)
+            pipeline.model.predict_proba(X_clean)
+        else:
+            pipeline.predict(X)
         times.append(time.perf_counter() - start)
     return np.array(times)
 
@@ -32,19 +37,21 @@ def _measure_latencies(pipeline, X: pd.DataFrame, n_runs: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 @pytest.mark.integration
 @pytest.mark.slow
-def test_single_request_median_latency_within_sla(mock_config, sample_data, trained_pipeline):
-    """Медианное время ответа на один запрос должно укладываться в SLA во избежание флапания на CI."""
+@pytest.mark.parametrize("use_proba", [False, True])
+def test_single_request_median_latency_within_sla(mock_config, sample_data, trained_pipeline, use_proba):
+    """Медианное время ответа (с расчетом вероятностей и без) должно укладываться в SLA."""
     target = mock_config.data.tabular.target_col
     single_row = sample_data.iloc[[0]].drop(columns=[target])
 
     for _ in range(WARMUP_RUNS):
-        trained_pipeline.predict(single_row)
+        _measure_latencies(trained_pipeline, single_row, 1, use_proba)
 
-    latencies = _measure_latencies(trained_pipeline, single_row, MEASURE_RUNS)
+    latencies = _measure_latencies(trained_pipeline, single_row, MEASURE_RUNS, use_proba)
     median_latency = np.median(latencies)
 
     assert median_latency < SINGLE_REQUEST_SLA_SEC, (
-        f"Медианная латентность {median_latency * 1000:.2f} мс превысила SLA {SINGLE_REQUEST_SLA_SEC * 1000} мс."
+        f"Медианная латентность {'(proba)' if use_proba else ''} {median_latency * 1000:.2f} мс "
+        f"превысила SLA {SINGLE_REQUEST_SLA_SEC * 1000} мс."
     )
 
 # ---------------------------------------------------------------------------

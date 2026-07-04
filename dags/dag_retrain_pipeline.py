@@ -17,7 +17,7 @@ DAG: retrain_pipeline
     Airflow здесь — чистый оркестратор. Он не импортирует и не запускает
     ML-код напрямую (airflow-образ намеренно лёгкий, без mlflow/optuna/
     catboost). Каждая ML-таска поднимает ОТДЕЛЬНЫЙ контейнер из образа
-    sber_autopodpiska-train:latest (core + train extra, см. pyproject.toml)
+    credit-risk-train:latest (core + train extra, см. pyproject.toml)
     через хостовый docker.sock, выполняет в нём `python -m main mode=...`
     и контейнер удаляется после завершения.
 
@@ -41,7 +41,7 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from docker.types import Mount
 
-TRAIN_IMAGE = "sber_autopodpiska-train:latest"
+TRAIN_IMAGE = "credit-risk-train:latest"
 # Имя сети Docker Compose генерирует как <имя_папки_проекта>_<имя_сети>.
 # Если compose-файл лежит в configs/deploy/, имя проекта по умолчанию = "deploy",
 # поэтому сеть = "deploy_ml_network". Если запускаешь compose с -p/COMPOSE_PROJECT_NAME,
@@ -55,10 +55,6 @@ HOST_PROJECT_ROOT = os.environ.get("HOST_PROJECT_ROOT")
 DB_USER = os.environ.get("DB_USER")
 DB_PASSWORD = os.environ.get("DB_PASSWORD")
 DB_NAME = os.environ.get("DB_NAME")
-
-HOST_DB_USER = os.environ.get("HOST_DB_USER", "postgres")
-HOST_DB_PASSWORD = os.environ.get("HOST_DB_PASSWORD")
-HOST_DB_NAME = os.environ.get("HOST_DB_NAME", "sber_autopodpiska")
 
 default_args = {
     "owner": "ml-team",
@@ -102,10 +98,6 @@ def common_docker_kwargs(task_id: str) -> dict:
             "POSTGRES_HOST": "host.docker.internal", 
             "POSTGRES_PORT": "5432",
             
-            # Переменные подхватятся из Airflow Scheduler, куда их передал .env
-            "POSTGRES_DB": HOST_DB_NAME,
-            "POSTGRES_USER": HOST_DB_USER,
-            "POSTGRES_PASSWORD": HOST_DB_PASSWORD,
         },
     )
 
@@ -156,7 +148,7 @@ with DAG(
     deploy_artifacts = DockerOperator(
         task_id="deploy_artifacts",
         image="docker:cli",  # Официальный мелкий образ, где есть команда docker
-        command="docker restart sber_api",
+        command="docker restart credit_risk_api",
         api_version="auto",
         auto_remove="success",
         # Используем ту же докер-сеть

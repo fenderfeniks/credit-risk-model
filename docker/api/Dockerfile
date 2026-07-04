@@ -19,6 +19,7 @@ RUN uv sync --no-dev --extra api --no-install-project
  
 # Код проекта
 COPY src/ src/
+COPY sql/ sql/
 COPY configs/ configs/
 COPY main.py main.py
  

@@ -1,0 +1,61 @@
+name: ML Pipeline CI
+
+# Когда запускать робота?
+on:
+  push:
+    branches: [ "main" ]       # При прямом пуше в main
+  pull_request:
+    branches: [ "main" ]       # При создании Pull Request в main
+
+jobs:
+  # === ДЖОБА 1: БЫСТРЫЕ ЮНИТ-ТЕСТЫ ===
+  unit-tests:
+    name: Fast Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Скачиваем твой код
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем быстрый пакетный менеджер uv
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      # 3. Ставим нужную версию Python
+      - name: Set up Python
+        run: uv python install 3.10
+
+      # 4. Устанавливаем все зависимости из pyproject.toml
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # 5. Запускаем ТОЛЬКО папку unit
+      - name: Run Unit Tests
+        run: uv run pytest tests/unit/ -v
+
+
+  # === ДЖОБА 2: ТЯЖЕЛЫЕ ИНТЕГРАЦИОННЫЕ ТЕСТЫ ===
+  integration-tests:
+    name: Heavy Integration Tests
+    needs: unit-tests          # КРИТИЧНО: Ждем, пока пройдет джоба unit-tests!
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # Запускаем ТОЛЬКО папку integration
+      - name: Run Integration Tests
+        run: uv run pytest tests/integration/ -v

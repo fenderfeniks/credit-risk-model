@@ -94,3 +94,4 @@ mlflow.db-journal
 # Бэкапы и чекпоинты Jupyter-ноутбуков
 .ipynb_checkpoints/
 */.ipynb_checkpoints/
+utils.txt

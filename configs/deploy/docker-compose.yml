@@ -49,10 +49,10 @@ services:
       dockerfile: docker/api/Dockerfile
     # Явный тег нужен, чтобы DockerOperator в Airflow мог ссылаться
     # на этот образ по имени, а не полагаться на автогенерируемый.
-    image: sber_autopodpiska-api:latest
+    image: credit-risk-model-api:latest
     # Фиксированное имя контейнера — чтобы DAG deploy_model мог
-    # сделать `docker restart sber_api` без лишней логики поиска имени.
-    container_name: sber_api
+    # сделать `docker restart api` без лишней логики поиска имени.
+    container_name: credit_risk_api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -76,7 +76,7 @@ services:
     build:
       context: ../../
       dockerfile: docker/train/Dockerfile
-    image: sber_autopodpiska-train:latest
+    image: credit-risk-train:latest
     profiles: ["build-only"]
     networks:
       - ml_network
@@ -130,15 +130,8 @@ services:
       # тот же data/raw в порождаемые им контейнеры (bind mount требует
       # абсолютный путь на хосте, а не путь внутри airflow-контейнера).
       - HOST_PROJECT_ROOT=${HOST_PROJECT_ROOT:-}
-      # Передаем переменные для DAG, чтобы DockerOperator мог их подхватить
-      # Если они заданы в .env на хосте, compose подставит их сюда. Иначе — дефолты.
-      - DB_USER=${DB_USER:-admin}
-      - DB_PASSWORD=${DB_PASSWORD:-admin}
-      - DB_NAME=${DB_NAME:-mlflow_db}
-      
-      - HOST_DB_USER=${HOST_DB_USER}
-      - HOST_DB_PASSWORD=${HOST_DB_PASSWORD}
-      - HOST_DB_NAME=${HOST_DB_NAME}
+
+
     command: scheduler
     networks:
       - ml_network
