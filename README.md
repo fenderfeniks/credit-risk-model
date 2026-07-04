@@ -69,32 +69,32 @@
 **Confusion Matrix — Dirty Baseline:**
 
 ![Confusion Matrix Dirty Baseline](reports/p_v0.0.0__f_v0.0.0__m_ncatboost_v0.0.0/error_analyse_0.0.0.png)
-*Плейсхолдер: `reports/dirty_baseline/confusion_matrix.png`*
+
 
 **Confusion Matrix — финальная модель:**
 
 ![Confusion Matrix Final](reports/p_v0.0.1__f_v0.0.1__m_ncatboost_v0.0.1/error_analyse_0.0.1.png)
-*Плейсхолдер: `reports/final/confusion_matrix.png`*
+
 
 **Top-15 Feature Importance — Dirty Baseline:**
 
 ![Feature Importance Dirty Baseline](reports/p_v0.0.0__f_v0.0.0__m_ncatboost_v0.0.0/features_importance_top15_0.0.0.png)
-*Плейсхолдер: `reports/dirty_baseline/feature_importance_top15.png`*
+
 
 **Top-15 Feature Importance — финальная модель:**
 
 ![Feature Importance Final](reports/p_v0.0.1__f_v0.0.1__m_ncatboost_v0.0.1/feature_importance_top15.png)
-*Плейсхолдер: `reports/final/feature_importance_top15.png`*
+
 
 **ROC-AUC Curve — Dirty Baseline:**
 
 ![ROC-AUC Dirty Baseline](reports/p_v0.0.0__f_v0.0.0__m_ncatboost_v0.0.0/roc_auc_curve_0.0.0.png)
-*Плейсхолдер: `reports/dirty_baseline/roc_auc_curve.png`*
+
 
 **ROC-AUC Curve — финальная модель:**
 
 ![ROC-AUC Final](reports/p_v0.0.1__f_v0.0.1__m_ncatboost_v0.0.1/roc_auc_curve_0.0.1.png)
-*Плейсхолдер: `reports/final/roc_auc_curve.png`*
+
 
 ---
 
