@@ -1,0 +1,22 @@
+# configs/env/dev.yaml
+
+env: "dev"
+
+run_name: "debug_run"
+
+data:
+  sample_pct: 0.2      # Берем только % данных для скорости
+
+training:
+  device: "cpu"         # Дебажим на процессоре
+  dl:
+    epochs: 1           # Всего 1 эпоха для нейронок
+  ml:
+    cv_folds: 2         # Минимум фолдов
+  optuna:
+    n_trials: 50         # Только 2 попытки для Optuna
+
+logging:
+  level: "DEBUG"        # Включаем максимальную детализацию логов
+  mlflow:
+    tracking_uri: "sqlite:///${paths.logs_dir}/mlflow.db"

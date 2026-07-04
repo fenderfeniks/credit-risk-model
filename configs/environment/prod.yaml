@@ -1,0 +1,23 @@
+# configs/env/prod.yaml
+
+env: "prod"
+
+run_name: "production_run"
+
+paths:
+  aggregate_sql_request: "aggregate_pyspark.sql"
+
+data:
+  sample_pct: 0.2       # 100% данных
+
+training:
+  device: "auto"        # Подхватит GPU, если есть
+  dl:
+    epochs: 20
+  ml:
+    cv_folds: 5
+
+logging:
+  level: "INFO"         # Оставляем только важные логи
+  mlflow:
+    tracking_uri: "http://localhost:5000"
