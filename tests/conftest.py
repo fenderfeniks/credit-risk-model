@@ -19,15 +19,21 @@ import mlflow
 
 import hydra
 from hydra import compose, initialize
+from hydra.core.global_hydra import GlobalHydra
 
 from src.core.artifacts import ArtifactManager
 from src.core.pipeline import MLPipeline
+from src.core.utils import register_config_schema 
 
 TARGET_COL = "is_target_action"
 
 @pytest.fixture(scope="function")
 def mock_config(tmp_path):
     """Подгружает реальный конфиг и принудительно патчит его недостающими полями для тестов."""
+    if GlobalHydra.instance().is_initialized():
+        GlobalHydra.instance().clear()
+    register_config_schema()
+
     with initialize(version_base=None, config_path="../configs"):
         cfg = compose(config_name="config")
         
