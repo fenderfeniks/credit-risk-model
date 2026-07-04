@@ -27,7 +27,26 @@ class ShapExplainer():
         self.run_name = config.run_name
         self.model_wrapper = model_wrapper
         self.native_model = model_wrapper.model
-        self.X_val_clean_df = X_val_clean_df
+
+        expected_cols = self.native_model.feature_names_
+        self.X_val_clean_df = X_val_clean_df[expected_cols].copy()
+        
+        model_type_name = type(self.native_model).__name__
+
+        # --- ШАГ 1: Избавляемся от всех типов 'category' ---
+        category_cols = self.X_val_clean_df.select_dtypes(include=['category']).columns
+        for col in category_cols:
+            self.X_val_clean_df[col] = self.X_val_clean_df[col].astype('object')
+
+        # --- ШАГ 2: Обработка NaN для CatBoost ---
+        if "CatBoost" in model_type_name:
+            cat_indices = self.native_model.get_cat_feature_indices()
+            
+            if cat_indices is not None and len(cat_indices) > 0:
+                for cat_idx in cat_indices:
+                    col_name = self.X_val_clean_df.columns[cat_idx]
+                    self.X_val_clean_df[col_name] = self.X_val_clean_df[col_name].fillna('NaN').astype(str)
+
         self.y_val = y_val
 
         self.reports_dir = Path(project_root / self.cfg.paths.reports_dir / self.run_name)
@@ -36,7 +55,7 @@ class ShapExplainer():
         print("Инициализация TreeExplainer...")
         self.explainer = shap.TreeExplainer(self.native_model)
         print("Расчет SHAP-значений для валидационной выборки...")
-        self.shap_values = self.explainer(X_val_clean_df)
+        self.shap_values = self.explainer(self.X_val_clean_df)
         print("Расчет успешно завершен!")
 
     def global_interpretation(self, max_display=15):

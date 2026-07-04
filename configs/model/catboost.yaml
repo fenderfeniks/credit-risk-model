@@ -1,12 +1,13 @@
 name: "catboost"
-model_version: "0.0.1"
-model_changelog: "tunning"
+model_version: "0.0.2"
+model_changelog: "tunned in prod"
 
 params:
   iterations: 1000
   eval_metric: "AUC"
-  depth: 4
-  min_data_in_leaf: 2
+  #auto_class_weights: 'Balanced'
+  depth: 5
+  min_data_in_leaf: 144
   learning_rate: 0.07362846165199796
   l2_leaf_reg: 5.962478772230717
   random_strength: 0.003107620097426215
@@ -14,7 +15,7 @@ params:
   subsample: 0.9289203372057002
   colsample_bylevel: 0.5905634072509229
   one_hot_max_size: 4
-  scale_pos_weight: 37.655393618515326
+  scale_pos_weight: 10.236086367965356
 
 
 # Передаем не просто границы, а конфигурацию для suggest методы
@@ -29,55 +30,55 @@ optuna_search_space:
 
   min_data_in_leaf:
     type: "int"
-    bounds: [1, 100]  # Регуляризация через минимальный размер листа — важно при сильном дисбалансе
+    bounds: [10, 200]  # Регуляризация через минимальный размер листа — важно при сильном дисбалансе
 
   # ============================================================
   # СКОРОСТЬ ОБУЧЕНИЯ И РЕГУЛЯРИЗАЦИЯ
   # ============================================================
-  learning_rate:
-    type: "float"
-    bounds: [0.01, 0.15]
-    log: false
+  #learning_rate:
+  #  type: "float"
+  #  bounds: [0.01, 0.15]
+  #  log: false
 
-  l2_leaf_reg:
-    type: "float"
-    bounds: [1.0, 10.0]
-    log: false
+  #l2_leaf_reg:
+  #  type: "float"
+  #  bounds: [1.0, 10.0]
+  #  log: false
 
-  random_strength:  # Исправлена опечатка в имени параметра!
-    type: "float"
-    bounds: [0.001, 2.0]
-    log: true
+  #random_strength:  # Исправлена опечатка в имени параметра!
+  #  type: "float"
+  #  bounds: [0.001, 2.0]
+  #  log: true
 
-  bagging_temperature:
-    type: "float"
-    bounds: [0.0, 1.0]  # 0 = детерминированный Bayesian bootstrap, 1 = максимальный шум подвыборки
-    log: false
+  #bagging_temperature:
+  #  type: "float"
+  #  bounds: [0.0, 1.0]  # 0 = детерминированный Bayesian bootstrap, 1 = максимальный шум подвыборки
+  #  log: false
 
   # ============================================================
   # СЭМПЛИРОВАНИЕ СТРОК/КОЛОНОК
   # ============================================================
-  subsample:
-    type: "float"
-    bounds: [0.6, 1.0]
-    log: false
+  #subsample:
+  #  type: "float"
+  #  bounds: [0.6, 1.0]
+  #  log: false
 
-  colsample_bylevel:
-    type: "float"
-    bounds: [0.5, 1.0]
-    log: false
+  #colsample_bylevel:
+  #  type: "float"
+  #  bounds: [0.5, 1.0]
+  #  log: false
 
   # ============================================================
   # РАБОТА С КАТЕГОРИАЛЬНЫМИ ПРИЗНАКАМИ
   # ============================================================
-  one_hot_max_size:
-    type: "int"
-    bounds: [2, 25]  # Порог, после которого CatBoost переходит с one-hot на ctr-кодирование
+  #one_hot_max_size:
+  #  type: "int"
+  #  bounds: [2, 25]  # Порог, после которого CatBoost переходит с one-hot на ctr-кодирование
 
   # ============================================================
   # ДИСБАЛАНС КЛАССОВ
   # ============================================================
   scale_pos_weight:  # Добавляем веса классов прямо в общий пул тюнинга разом!
     type: "float"
-    bounds: [15.0, 60.0]  # Центрировано вокруг фактического neg/pos ≈ 31, без ухода в переоценку
+    bounds: [10.0, 40.0]  # Центрировано вокруг фактического neg/pos ≈ 31, без ухода в переоценку
     log: false

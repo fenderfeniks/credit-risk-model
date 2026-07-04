@@ -33,6 +33,6 @@ dl:
 # ============================================================
 
 optuna:
-  n_trials: 100
+  n_trials: 30
   direction: "maximize"
   sampler: "tpe"

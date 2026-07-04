@@ -3,7 +3,7 @@ name: "lightgbm"
 model_version: "0.0.0"
 model_changelog: "Стартовый бейзлайн: дефолтные параметры, включен auto_class_weights для борьбы с дисбалансом"
 params:
-  n_estimators: 1000
+  n_estimators: 2000
   is_unbalance: True
 
 optuna_search_space:
