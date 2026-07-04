@@ -1,21 +1,21 @@
 name: "catboost"
-model_version: "0.0.2"
+model_version: "0.0.0"
 model_changelog: "tunned in prod"
 
 params:
   iterations: 1000
   eval_metric: "AUC"
-  #auto_class_weights: 'Balanced'
-  depth: 5
-  min_data_in_leaf: 144
-  learning_rate: 0.07362846165199796
-  l2_leaf_reg: 5.962478772230717
-  random_strength: 0.003107620097426215
-  bagging_temperature: 0.31710898235849494
-  subsample: 0.9289203372057002
-  colsample_bylevel: 0.5905634072509229
-  one_hot_max_size: 4
-  scale_pos_weight: 10.236086367965356
+  auto_class_weights: 'Balanced'
+  #depth: 5
+  #min_data_in_leaf: 144
+  #learning_rate: 0.07362846165199796
+  #l2_leaf_reg: 5.962478772230717
+  #random_strength: 0.003107620097426215
+  #bagging_temperature: 0.31710898235849494
+  #subsample: 0.9289203372057002
+  #colsample_bylevel: 0.5905634072509229
+  #one_hot_max_size: 4
+  #scale_pos_weight: 10.236086367965356
 
 
 # Передаем не просто границы, а конфигурацию для suggest методы

@@ -10,13 +10,13 @@ sample_pct: 0.2
 # ============================================================
 tabular:
   # --- ВЕРСИОНИРОВАНИЕ ДАННЫХ И ФИЧЕЙ ---
-  preprocessing_version: "0.0.1"  # Меняем, если изменился метод outlier или стратегии fill_value
+  preprocessing_version: "0.0.0"  # Меняем, если изменился метод outlier или стратегии fill_value
   preprocessing_changelog: "Change data types to category"
 
-  features_version: "0.0.1"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
+  features_version: "0.0.0"       # Меняем, если добавили города, новые SQL-скрипты или кросс-фичи
   features_changelog: "add some features"
 
-  aggregation_version: "3.0.1"
+  aggregation_version: "0.0.0"
   aggregation_changelog: "fix data leakege"
 
   target_col: "flag"
