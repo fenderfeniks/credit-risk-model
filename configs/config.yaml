@@ -7,7 +7,7 @@ defaults:
   - model: catboost #xgboost, catboost, lightgbm, pytorch
   - training: default
   - logging: default
-  - env@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
+  - environment@_global_: dev  # Подгружаем dev.yaml и мержим его ключи в корень
   - _self_
 
 # ============================================================
